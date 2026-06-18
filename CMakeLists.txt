@@ -1,31 +1,51 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(PSPComicReader VERSION 1.0.0)
-
-# PSP SDK path
-set(PSPSDK $ENV{PSPSDK})
-if(NOT PSPSDK)
-    message(FATAL_ERROR "PSPSDK environment variable not set")
+# ── Rileva PSPSDK prima di tutto ─────────────────────────────────────────────
+if(NOT DEFINED ENV{PSPSDK})
+    message(FATAL_ERROR "La variabile PSPSDK non è impostata. Esegui: export PSPSDK=$(psp-config --pspsdk-path)")
 endif()
 
-set(CMAKE_SYSTEM_NAME PSP)
-set(CMAKE_C_COMPILER   psp-gcc)
-set(CMAKE_CXX_COMPILER psp-g++)
+set(PSPSDK_PATH "$ENV{PSPSDK}")
+set(PSPDEV_PATH "$ENV{PSPDEV}")
 
-# Compiler flags
-set(PSP_CFLAGS "-G0 -Wall -O2 -fno-strict-aliasing")
+# ── Toolchain PSP ─────────────────────────────────────────────────────────────
+# Imposta il sistema target PRIMA di project()
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR mips)
+
+find_program(PSP_GCC psp-gcc REQUIRED)
+find_program(PSP_GPP psp-g++ REQUIRED)
+set(CMAKE_C_COMPILER   ${PSP_GCC})
+set(CMAKE_CXX_COMPILER ${PSP_GPP})
+
+# Evita che CMake testi il compilatore su host (cross-compile)
+set(CMAKE_C_COMPILER_WORKS   1)
+set(CMAKE_CXX_COMPILER_WORKS 1)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
+project(PSPComicReader VERSION 1.0.0 LANGUAGES C CXX)
+
+# ── Flag di compilazione ──────────────────────────────────────────────────────
+set(PSP_CFLAGS   "-G0 -Wall -O2 -fno-strict-aliasing -DPSP -D_PSP_FW_VERSION=150")
 set(CMAKE_C_FLAGS   "${PSP_CFLAGS}")
 set(CMAKE_CXX_FLAGS "${PSP_CFLAGS} -std=c++17 -fno-exceptions -fno-rtti")
 
-# Include directories
+# ── Include ───────────────────────────────────────────────────────────────────
 include_directories(
-    ${PSPSDK}/include
+    ${PSPSDK_PATH}/include           # pspkernel.h, pspgu.h, pspctrl.h …
+    ${PSPDEV_PATH}/psp/sdk/include   # fallback per alcune installazioni
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/libs/miniz
-    ${CMAKE_SOURCE_DIR}/src/libs/libjpeg
+    ${CMAKE_SOURCE_DIR}/src/libs/stb
 )
 
-# Source files
+# ── Librerie di link ──────────────────────────────────────────────────────────
+link_directories(
+    ${PSPSDK_PATH}/lib
+    ${PSPDEV_PATH}/psp/sdk/lib
+)
+
+# ── Sorgenti ──────────────────────────────────────────────────────────────────
 set(SOURCES
     src/main.cpp
     src/display.cpp
@@ -41,30 +61,34 @@ set(SOURCES
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-# Link PSP libraries
 target_link_libraries(${PROJECT_NAME}
-    -L${PSPSDK}/lib
-    -lpspgu
-    -lpspgum
-    -lpspctrl
-    -lpspdisplay
-    -lpspge
-    -lpspvfpu
-    -lpsputility
-    -lpsppower
-    -lpspaudio
-    -lpspaudiolib
-    -lm
-    -lc
-    -lg
-    -lstdc++
+    pspgu
+    pspgum
+    pspvfpu
+    pspctrl
+    pspdisplay
+    pspge
+    psputility
+    psppower
+    psprtc
+    pspaudio
+    m
+    c
+    stdc++
+    g
 )
 
-# PSP-specific build steps
+# ── Step post-build PSP ───────────────────────────────────────────────────────
+# Trova gli strumenti PSP
+find_program(PSP_FIXUP  psp-fixup-imports REQUIRED)
+find_program(MKSFO      mksfoex           REQUIRED)
+find_program(PACK_PBP   pack-pbp          REQUIRED)
+
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND psp-fixup-imports ${PROJECT_NAME}
-    COMMAND mksfoex -d MEMSIZE=1 "${PROJECT_NAME}" PARAM.SFO
-    COMMAND pack-pbp EBOOT.PBP PARAM.SFO NULL NULL NULL NULL NULL ${PROJECT_NAME} NULL
+    COMMAND ${PSP_FIXUP} $<TARGET_FILE:${PROJECT_NAME}>
+    COMMAND ${MKSFO} -d MEMSIZE=1 "PSPComicReader" PARAM.SFO
+    COMMAND ${PACK_PBP} EBOOT.PBP PARAM.SFO NULL NULL NULL NULL NULL
+            $<TARGET_FILE:${PROJECT_NAME}> NULL
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    COMMENT "Building PSP EBOOT.PBP"
+    COMMENT "Impacchettamento EBOOT.PBP..."
 )
