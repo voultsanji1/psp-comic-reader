@@ -11,10 +11,9 @@ on:
 jobs:
   build:
     name: Build EBOOT.PBP
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04        # ← GLIBC 2.38 → compatibile con pspdev nightly
 
     steps:
-      # ── Checkout ─────────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -24,25 +23,26 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /usr/local/pspdev
-          key: pspsdk-nightly-2024
+          key: pspsdk-ubuntu24-nightly-2026
 
-      # ── Install PSPSDK (pspdev toolchain) ────────────────────────────────────
-      - name: Install pspdev toolchain
-        if: steps.cache-pspsdk.outputs.cache-hit != 'true'
+      # ── Dipendenze di sistema ─────────────────────────────────────────────────
+      - name: Install build dependencies
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build python3 git wget curl \
-            libgmp-dev libmpfr-dev libmpc-dev \
-            texinfo bison flex autoconf automake libtool \
-            build-essential
+            cmake ninja-build wget git \
+            libgmp-dev libmpfr-dev libmpc-dev
 
-          # Download the pspdev pre-built toolchain (official nightly)
-          wget -q https://github.com/pspdev/pspdev/releases/latest/download/pspdev-ubuntu-latest-x86_64.tar.gz
+      # ── Scarica toolchain pspdev pre-compilato ────────────────────────────────
+      - name: Install pspdev toolchain
+        if: steps.cache-pspsdk.outputs.cache-hit != 'true'
+        run: |
+          wget -q \
+            https://github.com/pspdev/pspdev/releases/latest/download/pspdev-ubuntu-latest-x86_64.tar.gz
           sudo tar -xzf pspdev-ubuntu-latest-x86_64.tar.gz -C /usr/local/
           rm pspdev-ubuntu-latest-x86_64.tar.gz
 
-      # ── Set PSPSDK environment ────────────────────────────────────────────────
+      # ── Variabili d'ambiente ──────────────────────────────────────────────────
       - name: Configure PSPSDK environment
         run: |
           echo "PSPDEV=/usr/local/pspdev"     >> $GITHUB_ENV
@@ -50,7 +50,7 @@ jobs:
           echo "/usr/local/pspdev/bin"         >> $GITHUB_PATH
           echo "/usr/local/pspdev/psp/bin"     >> $GITHUB_PATH
 
-      # ── Download vendored single-header libraries ─────────────────────────────
+      # ── Librerie vendor (single-header) ───────────────────────────────────────
       - name: Download miniz (ZIP support)
         run: |
           wget -q https://raw.githubusercontent.com/richgel999/miniz/master/miniz.h \
@@ -63,47 +63,48 @@ jobs:
           wget -q https://raw.githubusercontent.com/nothings/stb/master/stb_image.h \
                -O src/libs/stb/stb_image.h
 
-      # ── Verify toolchain ──────────────────────────────────────────────────────
+      # ── Verifica toolchain ────────────────────────────────────────────────────
       - name: Verify psp-gcc
         run: psp-gcc --version
 
       # ── Build ─────────────────────────────────────────────────────────────────
       - name: Configure (CMake)
         run: |
+          # Usa il toolchain incluso nel pspdev se esiste, altrimenti il nostro
+          TC="$PSPSDK/lib/cmake/psp-toolchain.cmake"
+          [ -f "$TC" ] || TC="${GITHUB_WORKSPACE}/cmake/psp-toolchain.cmake"
           cmake -B build \
-            -DCMAKE_TOOLCHAIN_FILE=$PSPSDK/lib/cmake/psp-toolchain.cmake \
+            -DCMAKE_TOOLCHAIN_FILE="$TC" \
             -DCMAKE_BUILD_TYPE=Release \
             -G Ninja
 
       - name: Build
         run: cmake --build build --parallel
 
-      # ── Rename and stage artifact ─────────────────────────────────────────────
+      # ── Pacchettizza ──────────────────────────────────────────────────────────
       - name: Stage output
         run: |
           mkdir -p dist/PSPComicReader
           cp build/EBOOT.PBP dist/PSPComicReader/EBOOT.PBP
-          # Write a quick README for the ZIP
           cat > dist/PSPComicReader/README.txt << 'EOF'
           PSP Comic Reader
           ================
-          Place this folder at:  PSP/GAME/PSPComicReader/EBOOT.PBP
+          Copia la cartella in:  PSP/GAME/PSPComicReader/EBOOT.PBP
 
-          Put your comics (.cbz .cbr .cb7 .cbt .zip .pdf) in:
+          Metti i fumetti (.cbz .cbr .cb7 .cbt .zip .pdf) in:
             ms0:/COMICS/
 
-          Controls
-          --------
-          L / R Trigger   Previous / Next page
-          D-Pad / Analog  Pan image
-          Square          Cycle zoom mode (1:1 / Width / Height / Fit / Stretch)
-          L + R           Fit to screen immediately
-          Triangle        Menu
-          Circle          Back
-          Cross           Add bookmark  (in reader)
-          Cross           Open file     (in browser)
-          Select          Bookmarks list
-          Start           Toggle info bar
+          Controlli
+          ---------
+          L/R Trigger   Pagina precedente / successiva
+          D-Pad/Analog  Scorri immagine
+          Square        Cambia modalita' zoom
+          L + R         Adatta allo schermo
+          Triangle      Menu
+          Circle        Indietro
+          Cross         Apri file / Aggiungi segnalibro
+          Select        Lista segnalibri
+          Start         Mostra/nascondi barra info
           EOF
 
       - name: Create ZIP
@@ -111,43 +112,28 @@ jobs:
           cd dist
           zip -r PSPComicReader.zip PSPComicReader/
 
-      # ── Upload artifact (every build) ─────────────────────────────────────────
-      - name: Upload build artifact
+      # ── Artifact (ogni build) ─────────────────────────────────────────────────
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: PSPComicReader-${{ github.sha }}
           path: dist/PSPComicReader.zip
           retention-days: 14
 
-      # ── Create GitHub Release (on tag push) ───────────────────────────────────
+      # ── Release (solo su tag v*) ──────────────────────────────────────────────
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           name: PSP Comic Reader ${{ github.ref_name }}
-          draft: false
-          prerelease: false
           files: dist/PSPComicReader.zip
           body: |
             ## PSP Comic Reader ${{ github.ref_name }}
 
-            ### Supported formats
-            CBZ, CBR, CB7, CBT, ZIP, RAR, 7Z, TAR, PDF, JPG, PNG, BMP, GIF, WEBP, image folders
+            ### Formati supportati
+            CBZ, CBR, CB7, CBT, ZIP, RAR, 7Z, TAR, JPG, PNG, BMP, GIF, WEBP, cartelle
 
-            ### Installation
-            Copy `PSPComicReader/EBOOT.PBP` to `PSP/GAME/PSPComicReader/` on your Memory Stick.
-
-            ### Controls
-            | Button | Action |
-            |--------|--------|
-            | L / R Trigger | Prev / Next page |
-            | D-Pad / Analog | Pan |
-            | Square | Cycle zoom |
-            | L+R | Fit to screen |
-            | Triangle | Menu |
-            | Circle | Back |
-            | Cross | Open / Bookmark |
-            | Select | Bookmarks |
-            | Start | Toggle info bar |
+            ### Installazione
+            Copia `PSPComicReader/EBOOT.PBP` in `PSP/GAME/PSPComicReader/` sulla Memory Stick.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
