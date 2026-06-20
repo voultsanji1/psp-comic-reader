@@ -46,6 +46,8 @@ link_directories(
 )
 
 # ── Sorgenti ──────────────────────────────────────────────────────────────────
+# NOTA: miniz è incluso come header-only via miniz.h (vedi src/libs/miniz/miniz.h),
+# quindi miniz.c NON viene compilato come unità separata (evita doppia definizione).
 set(SOURCES
     src/main.cpp
     src/display.cpp
@@ -56,7 +58,6 @@ set(SOURCES
     src/bookmarks.cpp
     src/settings.cpp
     src/ui.cpp
-    src/libs/miniz/miniz.c
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
