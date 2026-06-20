@@ -11,7 +11,7 @@ on:
 jobs:
   build:
     name: Build EBOOT.PBP
-    runs-on: ubuntu-24.04        # ← GLIBC 2.38 → compatibile con pspdev nightly
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
@@ -50,16 +50,25 @@ jobs:
           echo "/usr/local/pspdev/bin"         >> $GITHUB_PATH
           echo "/usr/local/pspdev/psp/bin"     >> $GITHUB_PATH
 
-      # ── Librerie vendor (single-header) ───────────────────────────────────────
+      # ── miniz: versione amalgamata 2.2.0 (un solo file, niente CMake/export.h) ─
       - name: Download miniz (ZIP support)
         run: |
-          wget -q https://raw.githubusercontent.com/richgel999/miniz/master/miniz.h \
-               -O src/libs/miniz/miniz.h
-          wget -q https://raw.githubusercontent.com/richgel999/miniz/master/miniz.c \
-               -O src/libs/miniz/miniz.c
+          mkdir -p src/libs/miniz
+          wget -q https://raw.githubusercontent.com/richgel999/miniz/2.2.0/miniz.c \
+               -O src/libs/miniz/miniz_impl.h
+          cat > src/libs/miniz/miniz.h << 'MZEOF'
+          #pragma once
+          #define MINIZ_NO_STDIO
+          #define MINIZ_NO_TIME
+          #define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+          #include "miniz_impl.h"
+          MZEOF
+          # File .c vuoto per compatibilità con CMakeLists (non serve più compilarlo a parte)
+          echo "// intentionally empty: miniz is header-only via miniz.h" > src/libs/miniz/miniz.c
 
       - name: Download stb_image (image decoding)
         run: |
+          mkdir -p src/libs/stb
           wget -q https://raw.githubusercontent.com/nothings/stb/master/stb_image.h \
                -O src/libs/stb/stb_image.h
 
@@ -70,7 +79,6 @@ jobs:
       # ── Build ─────────────────────────────────────────────────────────────────
       - name: Configure (CMake)
         run: |
-          # Usa il toolchain incluso nel pspdev se esiste, altrimenti il nostro
           TC="$PSPSDK/lib/cmake/psp-toolchain.cmake"
           [ -f "$TC" ] || TC="${GITHUB_WORKSPACE}/cmake/psp-toolchain.cmake"
           cmake -B build \
