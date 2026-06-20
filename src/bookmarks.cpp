@@ -1,5 +1,6 @@
-#include <stdio.h>
-#include <string.h>
+#include <pspiofilemgr.h>
+#include <cstdio>
+#include <cstring>
 #include "main.h"
 #include "bookmarks.h"
 

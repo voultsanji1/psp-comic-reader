@@ -1,9 +1,9 @@
 #include <pspgu.h>
 #include <pspgum.h>
 #include <pspdisplay.h>
-#include <vram.h>
-#include <stdlib.h>
-#include <string.h>
+#include <pspkernel.h>
+#include <cstdlib>
+#include <cstring>
 #include "main.h"
 #include "display.h"
 

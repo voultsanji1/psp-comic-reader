@@ -3,9 +3,10 @@
 #include <pspdebug.h>
 #include <psprtc.h>
 #include <psppower.h>
-#include <stdio.h>
-#include <string.h>
-#include <math.h>
+#include <cstdio>
+#include <cstring>
+#include <cstdarg>
+#include <cmath>
 #include "main.h"
 #include "ui.h"
 #include "display.h"

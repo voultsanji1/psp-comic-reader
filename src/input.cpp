@@ -1,6 +1,9 @@
 #include <pspctrl.h>
-#include <stdlib.h>
-#include <math.h>
+#include <psppower.h>
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <cmath>
 #include "main.h"
 #include "input.h"
 #include "archive.h"
@@ -97,8 +100,9 @@ static void openFile(AppState* state, const char* path) {
             imageLoadPage(&state->arc, 1, &state->img_next);
 
         state->screen = SCREEN_READER;
+        const char* slash = strrchr(path, '/');
         snprintf(state->status_msg, sizeof(state->status_msg),
-                 "Opened: %s", path + (strrchr(path, '/') ? strrchr(path,'/')-path+1 : 0));
+                 "Opened: %s", slash ? slash + 1 : path);
         state->status_timer = 90;
     }
 }
